@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    
+    <!-- Dark Theme Colors -->
+    <color name="background_dark">#0D1117</color>
+    <color name="surface_dark">#161B22</color>
+    <color name="surface_elevated">#21262D</color>
+    
+    <!-- Accent Colors -->
+    <color name="primary">#58A6FF</color>
+    <color name="accent_primary">#7EE787</color>
+    <color name="primary_variant">#1F6FEB</color>
+    <color name="secondary">#7EE787</color>
+    <color name="accent_orange">#F0883E</color>
+    
+    <!-- Text Colors -->
+    <color name="text_primary">#F0F6FC</color>
+    <color name="text_secondary">#8B949E</color>
+    <color name="text_disabled">#484F58</color>
+    
+    <!-- Timer Display -->
+    <color name="timer_active">#58A6FF</color>
+    <color name="timer_warning">#F0883E</color>
+    <color name="timer_finished">#7EE787</color>
+    
+    <!-- Progress -->
+    <color name="progress_background">#21262D</color>
+    <color name="progress_foreground">#58A6FF</color>
+</resources>
