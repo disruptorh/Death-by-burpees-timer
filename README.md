@@ -4,11 +4,11 @@
   <img src="https://img.shields.io/badge/Platform-Android-green.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Language-Kotlin-blue.svg" alt="Language">
   <img src="https://img.shields.io/badge/Min%20SDK-24-orange.svg" alt="Min SDK">
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
+  <img src="https://img.shields.io/badge/License-Apache--2.0-yellow.svg" alt="License">
 </p>
 
 <p align="center">
-  <a href="https://github.com/reimen-cpu/Death-by-burpees-timer/releases/latest">
+  <a href="https://github.com/disruptorh/Death-by-burpees-timer/releases/latest">
     <img src="https://img.shields.io/badge/Download_APK-Latest_Release-2EA44F?style=for-the-badge&logo=android" alt="Download APK">
   </a>
 </p>
@@ -22,9 +22,9 @@
 ## 📱 Screenshots
 
 <p align="center">
-  <img src="https://github.com/reimen-cpu/Death-by-burpees-timer/blob/main/images/mode%20selection.png" alt="Mode Selection" width="250"/>
-  <img src="https://github.com/reimen-cpu/Death-by-burpees-timer/blob/main/images/routine%20mode.png" alt="Routine Mode" width="250"/>
-  <img src="https://github.com/reimen-cpu/Death-by-burpees-timer/blob/main/images/death%20by%20burpees.png" alt="Death by Burpees" width="250"/>
+  <img src="https://github.com/disruptorh/Death-by-burpees-timer/blob/main/images/mode%20selection.png" alt="Mode Selection" width="250"/>
+  <img src="https://github.com/disruptorh/Death-by-burpees-timer/blob/main/images/routine%20mode.png" alt="Routine Mode" width="250"/>
+  <img src="https://github.com/disruptorh/Death-by-burpees-timer/blob/main/images/death%20by%20burpees.png" alt="Death by Burpees" width="250"/>
 </p>
 
 ---
@@ -57,27 +57,30 @@
 
 ### 🔊 Premium Audio System
 
-All sounds are **synthesized in real-time** using `AudioTrack` for maximum quality and control.
+All sounds are **synthesized in real-time** using `AudioTrack` — no audio assets ship with the app. Generated buffers are cached per sound type so they are not recomputed on every tick.
 
 | Sound | Description |
 |-------|-------------|
-| **Warning** | 10 progressive beeps with increasing frequency (400→1000 Hz) and volume |
-| **Work/Minute** | Long "beeeeep" (900ms) with harmonics, like a race start whistle |
-| **Rest** | Soft descending tone for relaxation |
-| **End** | Clear resolution sound |
+| **Prepare ticks** | 5-second pre-start countdown: ascending 500→800 Hz ticks with vibration, ending on a double-tone "GO!" |
+| **Warning** | Progressive beeps before each minute (rising frequency and volume) |
+| **Work/Minute** | Long tone (~900 ms) with harmonics, like a race start whistle |
+| **Rest** | Soft descending three-tone sequence |
+| **End** | Clear four-note resolution |
 
-**Note:** All sounds respect the user's **media volume** settings.
+**Note:** All sounds respect the user's **media volume** settings. The app requests and abandons Android **audio focus** around playback, and pairs tones with **haptic feedback** (short buzz, or a pattern for the final cue).
 
 ---
 
 ### 📐 UI/UX Features
 
-- 🌙 **Dark theme** - Easy on the eyes
+- 🌙 **Dark theme** — Material 3 (`Theme.Material3.Dark.NoActionBar`) with XML layouts and ViewBinding
 - 📊 **Circular progress bar** with gradient colors
-- 🔄 **Background operation** - Works with screen off
-- 💾 **Auto-save settings** - Remembers your configuration
-- 🎨 **Material Design 3** components
+- ⏱️ **5-second prepare countdown** with ascending ticks before every session
+- 🔄 **Background operation** — a `FOREGROUND_SERVICE` of type `mediaPlayback` keeps the timer alive with the screen off
+- 🔔 **Live notification** — the remaining time is updated in-place while the timer runs
+- 💾 **Auto-save settings** — remembers your configuration across sessions
 - ⏸️ **Pause/Resume** functionality
+- 📳 **Vibration** on every cue, for training with the phone in a pocket
 
 ---
 
@@ -85,31 +88,49 @@ All sounds are **synthesized in real-time** using `AudioTrack` for maximum quali
 
 ### Prerequisites
 
-- Android Studio (latest version recommended)
-- Android SDK 24 or higher
-- Kotlin plugin
+- Android Studio (latest version recommended) or a standalone JDK **17**
+- Android SDK 24+ (`compileSdk` / `targetSdk` 34)
+- Gradle 8.5 (bundled via `gradlew`, no local install needed)
+- Kotlin 1.9.22
+
+### ⚠️ Before the first build: `keystore.properties`
+
+`app/build.gradle.kts` reads `app/keystore.properties` at **configuration time**, unconditionally — before it even decides which build type you asked for. That file is gitignored, so on a fresh clone **every** Gradle command fails with a `FileNotFoundException` until you create it, including plain `assembleDebug`:
+
+```properties
+storeFile=/ruta/a/tu/keystore.jks
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+
+It is only actually used by the `release` build type. Keep it out of version control.
 
 ### Installation
 
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/reimen-cpu/Death-by-burpees-timer.git
+   git clone https://github.com/disruptorh/Death-by-burpees-timer.git
    cd Death-by-burpees-timer
    ```
 
-2. **Open in Android Studio**
+2. **Create `app/keystore.properties`** (see above)
+
+3. **Open in Android Studio**
    - Launch Android Studio
    - Select "Open an existing project"
    - Navigate to the cloned directory
 
-3. **Build the project**
+4. **Build the project**
    ```bash
-   ./gradlew assembleDebug
+   ./gradlew assembleDebug     # APK de depuración, sin firmar
+   ./gradlew assembleRelease   # APK firmado (necesita el keystore)
    ```
 
-4. **Install the APK**
+5. **Install the APK**
    - APK location: `app/build/outputs/apk/debug/app-debug.apk`
+   - O bien `./gradlew installDebug` para instalarlo directamente en el dispositivo
 
 ---
 
@@ -120,10 +141,10 @@ All sounds are **synthesized in real-time** using `AudioTrack` for maximum quali
 2. Choose between **Modo Rutina** or **Muerte por Burpees**
 
 ### Routine Mode
-1. Set work duration (seconds or minutes)
-2. Set rest duration (seconds or minutes)
-3. Set number of sets
-4. Tap **Play** to start
+1. Set work duration (5 s – 60 min)
+2. Set rest duration (0 – 60 min)
+3. Set number of sets (1-99)
+4. Tap **Play**; a 5-second prepare countdown ticks up before the first work phase
 5. Listen for audio cues during phase transitions
 
 ### Death by Burpees Mode
@@ -141,24 +162,53 @@ All sounds are **synthesized in real-time** using `AudioTrack` for maximum quali
 
 | Technology | Purpose |
 |------------|---------|
-| **Kotlin** | Main programming language |
+| **Kotlin** | Main programming language (JVM target 17) |
 | **MVVM** | Architecture pattern |
+| **LiveData** | State observation between service, ViewModel and UI |
 | **AudioTrack** | Custom sound synthesis |
-| **Foreground Service** | Background operation |
+| **Foreground Service** (`mediaPlayback`) | Background operation |
 | **SharedPreferences** | Settings persistence |
-| **Material Design 3** | UI components |
+| **Material 3** + ViewBinding | XML UI components |
+| **Coroutines** | Off-thread sound generation and playback |
+
+### Permissions
+
+| Permission | Why |
+|------------|-----|
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Keep the timer running with the screen off |
+| `WAKE_LOCK` | Prevent the CPU from sleeping mid-interval |
+| `POST_NOTIFICATIONS` | Show the live countdown notification (Android 13+) |
+| `VIBRATE` | Haptic feedback on every cue |
 
 ### Key Components
 
 ```text
 app/src/main/java/com/timer/minimal/
+├── ModeSelectionActivity.kt  # Launcher screen, picks the mode
 ├── MainActivity.kt           # Routine mode UI
 ├── DeathBurpeesActivity.kt   # Death by Burpees UI
-├── ModeSelectionActivity.kt  # Mode selection screen
-├── TimerViewModel.kt         # Business logic & state
-├── TimerService.kt           # Foreground service
-└── SoundManager.kt           # Custom audio synthesis
+├── TimerService.kt           # Foreground service: ALL countdown logic
+├── TimerViewModel.kt         # Thin proxy — config + relays service state
+├── SoundManager.kt           # Custom audio synthesis + audio focus
+└── PreferencesManager.kt     # SharedPreferences wrapper
 ```
+
+**Architecture note:** the countdown does **not** live in the ViewModel. `TimerService` owns a single `CountDownTimer` and publishes `TimerState` (IDLE/RUNNING/PAUSED) and `TimerPhase` (PREPARE/WORK/REST) as `LiveData`; both Activities bind to the service and observe those directly. `TimerViewModel` is deliberately logic-free — it holds the editable configuration (work 5–3600 s, rest 0–3600 s, 1–99 sets, 1–999 min) and persists each change through `PreferencesManager`.
+
+### Validation ranges
+
+| Setting | Accepted range | Default |
+|---|---|---|
+| Work duration | 5–3600 s | 60 s |
+| Rest duration | 0–3600 s | 180 s |
+| Total sets | 1–99 | 8 |
+| Total duration | 1–999 min | 5 min |
+
+Values outside these ranges are rejected by the ViewModel, so the service never receives an invalid configuration.
+
+### Tests
+
+There are no automated tests in this repository yet; verification has been manual on-device.
 
 ---
 
@@ -174,7 +224,7 @@ app/src/main/java/com/timer/minimal/
 
 ##  License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
 
@@ -182,8 +232,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Reimen**
 
-- GitHub: [@reimen-cpu](https://github.com/reimen-cpu)
-- Project Link: [Death-by-burpees-timer](https://github.com/reimen-cpu/Death-by-burpees-timer)
+- GitHub: [@disruptorh](https://github.com/disruptorh)
+- Project Link: [Death-by-burpees-timer](https://github.com/disruptorh/Death-by-burpees-timer)
 
 ---
 
