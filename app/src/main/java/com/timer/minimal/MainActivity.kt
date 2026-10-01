@@ -6,13 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ProgressBar
@@ -21,6 +21,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
 
 class MainActivity : AppCompatActivity() {
 
@@ -34,36 +36,30 @@ class MainActivity : AppCompatActivity() {
     private lateinit var phaseIndicator: TextView
     private lateinit var setCounter: TextView
 
-    private lateinit var toggleWorkUnit: com.google.android.material.button.MaterialButtonToggleGroup
-    private lateinit var toggleRestUnit: com.google.android.material.button.MaterialButtonToggleGroup
+    private lateinit var toggleWorkUnit: MaterialButtonToggleGroup
+    private lateinit var toggleRestUnit: MaterialButtonToggleGroup
 
-    // Multiplicadores actuales
-    private var workMultiplier = 1
-    private var restMultiplier = 1
-
-    // Flags para evitar bucles de actualización
-    private var isUpdatingFromViewModel = false
-
-    private lateinit var btnStart: Button
+    private lateinit var btnStart: MaterialButton
     private lateinit var btnStop: Button
     private lateinit var btnReset: Button
 
     private var timerService: TimerService? = null
     private var serviceBound = false
 
+    private val colorWarning by lazy { ContextCompat.getColor(this, R.color.timer_warning) }
+    private val colorRest by lazy { ContextCompat.getColor(this, R.color.timer_rest) }
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as TimerService.TimerBinder
             timerService = binder.getService()
             serviceBound = true
-            viewModel.bindService(binder.getService())
             observeServiceState()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             timerService = null
             serviceBound = false
-            viewModel.unbindService()
         }
     }
 
@@ -80,23 +76,32 @@ class MainActivity : AppCompatActivity() {
         initViews()
         initViewModel()
         requestNotificationPermission()
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     override fun onStart() {
         super.onStart()
-        // Bind to existing service if running
-        val intent = Intent(this, TimerService::class.java)
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        // Keep the screen on only while this Activity is visible, so the
+        // service can keep running in the background with the screen off.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        ensureServiceBound()
     }
 
     override fun onStop() {
         super.onStop()
-        if (serviceBound) {
-            unbindService(serviceConnection)
-            serviceBound = false
-            viewModel.unbindService()
-        }
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        releaseServiceBinding()
+    }
+
+    private fun ensureServiceBound() {
+        if (serviceBound) return
+        bindService(Intent(this, TimerService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun releaseServiceBinding() {
+        if (!serviceBound) return
+        unbindService(serviceConnection)
+        serviceBound = false
+        timerService = null
     }
 
     private fun initViews() {
@@ -111,6 +116,7 @@ class MainActivity : AppCompatActivity() {
         progressBar = findViewById(R.id.progressBar)
         phaseIndicator = findViewById(R.id.phaseIndicator)
         setCounter = findViewById(R.id.setCounter)
+
         btnStart = findViewById(R.id.btnStart)
         btnStop = findViewById(R.id.btnStop)
         btnReset = findViewById(R.id.btnReset)
@@ -128,8 +134,7 @@ class MainActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                if (isUpdatingFromViewModel) return
-                updateWorkDurationFromInput()
+                if (!isSyncingFromViewModel) applyWorkInput()
             }
         })
 
@@ -137,8 +142,7 @@ class MainActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                if (isUpdatingFromViewModel) return
-                updateRestDurationFromInput()
+                if (!isSyncingFromViewModel) applyRestInput()
             }
         })
 
@@ -146,110 +150,115 @@ class MainActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                if (isUpdatingFromViewModel) return
-                val text = s?.toString() ?: return
-                val sets = text.toIntOrNull()
-                if (sets != null && sets in 1..99) {
+                if (isSyncingFromViewModel) return
+                val sets = s?.toString()?.toIntOrNull()
+                if (sets != null && sets in TimerEngine.MIN_SETS..TimerEngine.MAX_SETS) {
                     viewModel.setTotalSets(sets)
                 }
             }
         })
     }
 
+    /**
+     * Unit toggles only change how the current number is *rendered*. The stored
+     * value in seconds is left untouched, so switching sec/min never rescales the
+     * number by 60 behind the user's back.
+     */
     private fun setupToggles() {
         toggleWorkUnit.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (isChecked) {
-                workMultiplier = if (checkedId == R.id.btnWorkMin) 60 else 1
-                if (!isUpdatingFromViewModel) updateWorkDurationFromInput()
+            if (isChecked && !isSyncingFromViewModel) {
+                renderWork(viewModel.workDuration.value ?: 60)
             }
         }
-
         toggleRestUnit.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (isChecked) {
-                restMultiplier = if (checkedId == R.id.btnRestMin) 60 else 1
-                if (!isUpdatingFromViewModel) updateRestDurationFromInput()
+            if (isChecked && !isSyncingFromViewModel) {
+                renderRest(viewModel.restDuration.value ?: 180)
             }
         }
     }
 
-    private fun updateWorkDurationFromInput() {
-        val text = inputWorkDuration.text?.toString() ?: return
-        val value = text.toIntOrNull()
-        if (value != null) {
-            val totalSeconds = value * workMultiplier
-            if (totalSeconds in 5..3600) {
-                viewModel.setWorkDuration(totalSeconds)
-            }
+    private fun applyWorkInput() {
+        val value = inputWorkDuration.text?.toString()?.toIntOrNull() ?: return
+        val multiplier = currentWorkMultiplier()
+        val totalSeconds = value * multiplier
+        if (totalSeconds in TimerEngine.MIN_WORK_SEC..TimerEngine.MAX_PHASE_SEC) {
+            viewModel.setWorkDuration(totalSeconds)
         }
     }
 
-    private fun updateRestDurationFromInput() {
-        val text = inputRestDuration.text?.toString() ?: return
-        val value = text.toIntOrNull()
-        if (value != null) {
-            val totalSeconds = value * restMultiplier
-            if (totalSeconds in 0..3600) {
-                viewModel.setRestDuration(totalSeconds)
-            }
+    private fun applyRestInput() {
+        val value = inputRestDuration.text?.toString()?.toIntOrNull() ?: return
+        val multiplier = currentRestMultiplier()
+        val totalSeconds = value * multiplier
+        if (totalSeconds in 0..TimerEngine.MAX_PHASE_SEC) {
+            viewModel.setRestDuration(totalSeconds)
         }
+    }
+
+    private fun currentWorkMultiplier(): Int =
+        if (toggleWorkUnit.checkedButtonId == R.id.btnWorkMin) 60 else 1
+
+    private fun currentRestMultiplier(): Int =
+        if (toggleRestUnit.checkedButtonId == R.id.btnRestMin) 60 else 1
+
+    private fun renderWork(seconds: Int) {
+        isSyncingFromViewModel = true
+        if (seconds >= 60 && seconds % 60 == 0) {
+            toggleWorkUnit.check(R.id.btnWorkMin)
+            inputWorkDuration.setText((seconds / 60).toString())
+        } else {
+            toggleWorkUnit.check(R.id.btnWorkSec)
+            inputWorkDuration.setText(seconds.toString())
+        }
+        isSyncingFromViewModel = false
+    }
+
+    private fun renderRest(seconds: Int) {
+        isSyncingFromViewModel = true
+        if (seconds >= 60 && seconds % 60 == 0) {
+            toggleRestUnit.check(R.id.btnRestMin)
+            inputRestDuration.setText((seconds / 60).toString())
+        } else {
+            toggleRestUnit.check(R.id.btnRestSec)
+            inputRestDuration.setText(seconds.toString())
+        }
+        isSyncingFromViewModel = false
     }
 
     private fun initViewModel() {
         viewModel = ViewModelProvider(this)[TimerViewModel::class.java]
         viewModel.setTimerMode(TimerMode.ROUTINE)
 
-        // Observe preferences for input fields
+        // A preset chosen on the mode selector becomes the starting configuration.
+        intent.getStringExtra(ModeSelectionActivity.EXTRA_PRESET_ID)?.let { presetId ->
+            PresetManager(this).findById(presetId)?.let(viewModel::applyPreset)
+        }
+
         viewModel.workDuration.observe(this) { seconds ->
-            if (!inputWorkDuration.hasFocus()) {
-                isUpdatingFromViewModel = true
-                if (seconds % 60 == 0 && seconds >= 60) {
-                    toggleWorkUnit.check(R.id.btnWorkMin)
-                    inputWorkDuration.setText((seconds / 60).toString())
-                } else {
-                    toggleWorkUnit.check(R.id.btnWorkSec)
-                    inputWorkDuration.setText(seconds.toString())
-                }
-                isUpdatingFromViewModel = false
-            }
+            if (!inputWorkDuration.hasFocus()) renderWork(seconds)
         }
-
         viewModel.restDuration.observe(this) { seconds ->
-            if (!inputRestDuration.hasFocus()) {
-                isUpdatingFromViewModel = true
-                if (seconds % 60 == 0 && seconds >= 60) {
-                    toggleRestUnit.check(R.id.btnRestMin)
-                    inputRestDuration.setText((seconds / 60).toString())
-                } else {
-                    toggleRestUnit.check(R.id.btnRestSec)
-                    inputRestDuration.setText(seconds.toString())
-                }
-                isUpdatingFromViewModel = false
-            }
+            if (!inputRestDuration.hasFocus()) renderRest(seconds)
         }
-
         viewModel.totalSets.observe(this) { sets ->
             if (!inputTotalSets.hasFocus()) {
-                isUpdatingFromViewModel = true
+                isSyncingFromViewModel = true
                 inputTotalSets.setText(sets.toString())
-                isUpdatingFromViewModel = false
+                isSyncingFromViewModel = false
             }
         }
     }
 
-    /**
-     * Observe timer state from the bound service.
-     * Called after ServiceConnection is established.
-     */
     private fun observeServiceState() {
         val service = timerService ?: return
 
         service.timeRemainingMs.observe(this) { timeMs ->
             timerDisplay.text = viewModel.formatTime(timeMs)
+            timerDisplay.contentDescription = getString(R.string.timer_remaining, timerDisplay.text)
 
-            val totalMs = service.totalTimeMs.value ?: 1L
+            val totalMs = service.totalTimeMs.value ?: 0L
             if (totalMs > 0) {
-                val progress = ((timeMs.toFloat() / totalMs.toFloat()) * 100).toInt()
-                progressBar.progress = progress
+                progressBar.progress = ((timeMs.toFloat() / totalMs.toFloat()) * 100).toInt()
             }
         }
 
@@ -268,29 +277,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePhaseIndicator(phase: TimerPhase) {
-        when (phase) {
-            TimerPhase.PREPARE -> {
-                phaseIndicator.text = getString(R.string.phase_prepare)
-                phaseIndicator.setTextColor(Color.parseColor("#FFB300")) // Amber
-            }
-            TimerPhase.WORK -> {
-                phaseIndicator.text = getString(R.string.phase_work)
-                phaseIndicator.setTextColor(ContextCompat.getColor(this, R.color.accent_primary))
-            }
-            TimerPhase.REST -> {
-                phaseIndicator.text = getString(R.string.phase_rest)
-                phaseIndicator.setTextColor(Color.parseColor("#4FC3F7"))
-            }
+        val colorRes = when (phase) {
+            TimerPhase.PREPARE -> R.color.timer_warning
+            TimerPhase.WORK -> R.color.accent_primary
+            TimerPhase.REST -> R.color.timer_rest
         }
+        val labelRes = when (phase) {
+            TimerPhase.PREPARE -> R.string.phase_prepare
+            TimerPhase.WORK -> R.string.phase_work
+            TimerPhase.REST -> R.string.phase_rest
+        }
+        phaseIndicator.setText(labelRes)
+        phaseIndicator.setTextColor(ContextCompat.getColor(this, colorRes))
     }
 
     private fun updateUI(state: TimerState) {
+        val inputsEnabled = state == TimerState.IDLE
+        inputWorkDuration.isEnabled = inputsEnabled
+        inputRestDuration.isEnabled = inputsEnabled
+        inputTotalSets.isEnabled = inputsEnabled
+
         when (state) {
             TimerState.IDLE -> {
-                inputWorkDuration.isEnabled = true
-                inputRestDuration.isEnabled = true
-                inputTotalSets.isEnabled = true
-                (btnStart as com.google.android.material.button.MaterialButton).setIconResource(R.drawable.ic_play)
+                btnStart.setIconResource(R.drawable.ic_play)
+                btnStart.contentDescription = getString(R.string.cd_start_timer)
                 btnStart.visibility = View.VISIBLE
                 btnStop.visibility = View.GONE
                 btnReset.visibility = View.GONE
@@ -299,10 +309,8 @@ class MainActivity : AppCompatActivity() {
                 progressBar.progress = 0
             }
             TimerState.RUNNING -> {
-                inputWorkDuration.isEnabled = false
-                inputRestDuration.isEnabled = false
-                inputTotalSets.isEnabled = false
-                (btnStart as com.google.android.material.button.MaterialButton).setIconResource(R.drawable.ic_pause)
+                btnStart.setIconResource(R.drawable.ic_pause)
+                btnStart.contentDescription = getString(R.string.btn_pause)
                 btnStart.visibility = View.VISIBLE
                 btnStop.visibility = View.VISIBLE
                 btnReset.visibility = View.GONE
@@ -310,10 +318,8 @@ class MainActivity : AppCompatActivity() {
                 setCounter.visibility = View.VISIBLE
             }
             TimerState.PAUSED -> {
-                inputWorkDuration.isEnabled = false
-                inputRestDuration.isEnabled = false
-                inputTotalSets.isEnabled = false
-                (btnStart as com.google.android.material.button.MaterialButton).setIconResource(R.drawable.ic_play)
+                btnStart.setIconResource(R.drawable.ic_play)
+                btnStart.contentDescription = getString(R.string.btn_resume)
                 btnStart.visibility = View.VISIBLE
                 btnStop.visibility = View.VISIBLE
                 btnReset.visibility = View.VISIBLE
@@ -324,62 +330,61 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onStartClicked() {
-        val currentState = timerService?.timerState?.value ?: TimerState.IDLE
-
-        when (currentState) {
+        when (timerService?.timerState?.value ?: TimerState.IDLE) {
             TimerState.IDLE -> {
-                // Start fresh timer via foreground service
                 val intent = Intent(this, TimerService::class.java).apply {
                     action = TimerService.ACTION_START
                     putExtra(TimerService.EXTRA_MODE, TimerMode.ROUTINE.name)
-                    putExtra(TimerService.EXTRA_WORK_DURATION, viewModel.workDuration.value ?: 60)
-                    putExtra(TimerService.EXTRA_REST_DURATION, viewModel.restDuration.value ?: 180)
-                    putExtra(TimerService.EXTRA_TOTAL_SETS, viewModel.totalSets.value ?: 1)
+                    putExtra(
+                        TimerService.EXTRA_WORK_DURATION,
+                        viewModel.workDuration.value ?: 60
+                    )
+                    putExtra(
+                        TimerService.EXTRA_REST_DURATION,
+                        viewModel.restDuration.value ?: 180
+                    )
+                    putExtra(
+                        TimerService.EXTRA_TOTAL_SETS,
+                        viewModel.totalSets.value ?: 1
+                    )
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     startForegroundService(intent)
                 } else {
                     startService(intent)
                 }
-                // Bind to observe state
-                bindService(Intent(this, TimerService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
+                ensureServiceBound()
             }
-            TimerState.PAUSED -> {
-                // Resume
-                val intent = Intent(this, TimerService::class.java).apply {
-                    action = TimerService.ACTION_RESUME
-                }
-                startService(intent)
-            }
-            TimerState.RUNNING -> {
-                // Pause
-                val intent = Intent(this, TimerService::class.java).apply {
-                    action = TimerService.ACTION_PAUSE
-                }
-                startService(intent)
-            }
+            TimerState.PAUSED -> startService(
+                Intent(this, TimerService::class.java).setAction(TimerService.ACTION_RESUME)
+            )
+            TimerState.RUNNING -> startService(
+                Intent(this, TimerService::class.java).setAction(TimerService.ACTION_PAUSE)
+            )
         }
     }
 
     private fun onStopClicked() {
-        val intent = Intent(this, TimerService::class.java).apply {
-            action = TimerService.ACTION_STOP
-        }
-        startService(intent)
+        startService(
+            Intent(this, TimerService::class.java).setAction(TimerService.ACTION_STOP)
+        )
     }
 
     private fun onResetClicked() {
         onStopClicked()
         progressBar.progress = 0
-        timerDisplay.text = "00:00"
+        timerDisplay.setText(R.string.timer_zero)
     }
 
     private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+
+    /** Guards the input fields against echoing their own programmatic updates. */
+    private var isSyncingFromViewModel = false
 }

@@ -22,20 +22,21 @@ class SoundManager(private val context: Context) {
     private val sampleRate = 44100
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    private val settings: SoundSettings = SoundPreferences(context).load()
+
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var audioFocusRequest: Any? = null // AudioFocusRequest on API 26+
 
     // Cache generated sounds to avoid re-generating on every tick
     private val soundCache = mutableMapOf<SoundType, ShortArray>()
+    private var warningCache: Map<Int, ShortArray> = emptyMap()
+    private var prepareTickCache: Map<Int, ShortArray> = emptyMap()
 
     private enum class SoundType {
         MINUTE,
         WORK_START,
         REST_START,
         FINAL,
-        WARNING_SHORT,
-        WARNING_MEDIUM,
-        WARNING_LONG,
         PREPARE_GO
     }
 
@@ -74,6 +75,32 @@ class SoundManager(private val context: Context) {
             listOf(150, 350),
             0.7f
         )
+        // Ten escalating warning beeps, one per remaining second, generated once.
+        warningCache = (1..10).associateWith { secondsToMinute ->
+            generateWarningBeep(secondsToMinute)
+        }
+        // Four ascending prepare ticks (2s..5s). Second 1 uses PREPARE_GO.
+        prepareTickCache = (2..TimerEngine.PREPARE_DURATION_SEC).associateWith { secondsRemaining ->
+            generateShortBeep(prepareFrequency(secondsRemaining), 80, 0.55f)
+        }
+    }
+
+    /**
+     * Warning beeps ramp in frequency and volume as the deadline approaches.
+     * [secondsToMinute] is clamped to 1..10; 1 is the most urgent.
+     */
+    private fun generateWarningBeep(secondsToMinute: Int): ShortArray {
+        val progress = 1f - (secondsToMinute.coerceIn(1, 10) - 1) / 9f
+        val frequency = 400.0 + (600.0 * progress)
+        val duration = (100 - (50 * progress)).toInt()
+        val amplitude = 0.5f + (0.4f * progress)
+        return generateShortBeep(frequency, duration, amplitude)
+    }
+
+    /** Ascending tick: 5s=500Hz, 4s=600Hz, 3s=700Hz, 2s=800Hz. */
+    private fun prepareFrequency(secondsRemaining: Int): Double {
+        val offset = secondsRemaining.coerceIn(2, TimerEngine.PREPARE_DURATION_SEC) - 2
+        return 500.0 + (300.0 * (1.0 - offset / 3.0))
     }
 
     /**
@@ -87,10 +114,7 @@ class SoundManager(private val context: Context) {
                 soundCache[SoundType.PREPARE_GO]?.let { playBuffer(it) }
                 vibrateShort(200)
             } else {
-                // Ascending tick: 5s=500Hz, 4s=600Hz, 3s=700Hz, 2s=800Hz
-                val frequency = 500.0 + (300.0 * (1.0 - (secondsRemaining - 2).toDouble() / 3.0))
-                val buffer = generateShortBeep(frequency, 80, 0.55f)
-                playBuffer(buffer)
+                prepareTickCache[secondsRemaining]?.let { playBuffer(it) }
                 vibrateShort(40)
             }
         }
@@ -100,6 +124,7 @@ class SoundManager(private val context: Context) {
      * Request audio focus to duck other apps (e.g. Spotify)
      */
     private fun requestAudioFocus(): Boolean {
+        if (!settings.audioFocusEnabled) return true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val request = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                 .setAudioAttributes(audioAttributes)
@@ -118,6 +143,7 @@ class SoundManager(private val context: Context) {
     }
 
     private fun abandonAudioFocus() {
+        if (!settings.audioFocusEnabled) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             audioFocusRequest?.let {
                 if (it is android.media.AudioFocusRequest) {
@@ -131,19 +157,13 @@ class SoundManager(private val context: Context) {
     }
 
     fun playWarningBeep(secondsToMinute: Int = 5) {
+        if (!settings.soundEnabled) return
         scope.launch {
-            // Calculate progress (10s=0.0, 1s=1.0)
-            val progress = 1f - (secondsToMinute - 1) / 9f
-
-            // Generate on the fly as parameters change dynamically,
-            // but we could cache specific steps if needed.
-            // For now, generating these short beeps is cheap.
-            val frequency = 400.0 + (600.0 * progress)
-            val duration = (100 - (50 * progress)).toInt()
-            val amplitude = 0.5f + (0.4f * progress)
-
-            val buffer = generateShortBeep(frequency, duration, amplitude)
+            // Served from the pre-generated ramp; regenerated only if out of range.
+            val buffer = warningCache[secondsToMinute]
+                ?: generateWarningBeep(secondsToMinute)
             playBuffer(buffer)
+            vibrateShort(30)
         }
     }
 
@@ -157,7 +177,6 @@ class SoundManager(private val context: Context) {
             vibrateShort(120)
         }
     }
-
     fun playFinalBeep() {
         scope.launch {
             val buffer = soundCache[SoundType.FINAL] ?: generateToneSequence(
@@ -253,6 +272,7 @@ class SoundManager(private val context: Context) {
     }
 
     private fun playBuffer(buffer: ShortArray) {
+        if (!settings.soundEnabled) return
         try {
             // Request focus before playing
             requestAudioFocus()
@@ -287,6 +307,7 @@ class SoundManager(private val context: Context) {
     }
 
     private fun vibrateShort(durationMs: Long) {
+        if (!settings.vibrationEnabled) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
@@ -300,6 +321,7 @@ class SoundManager(private val context: Context) {
     }
 
     private fun vibratePattern(pattern: LongArray) {
+        if (!settings.vibrationEnabled) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))

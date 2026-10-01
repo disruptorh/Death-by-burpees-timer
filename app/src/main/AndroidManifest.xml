@@ -29,11 +29,23 @@
             android:name=".MainActivity"
             android:exported="false"
             android:launchMode="singleTop" />
-        
+
         <activity
             android:name=".DeathBurpeesActivity"
             android:exported="false"
             android:launchMode="singleTop" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title"
+            android:parentActivityName=".ModeSelectionActivity" />
+
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false"
+            android:label="@string/history_title"
+            android:parentActivityName=".ModeSelectionActivity" />
 
         <service
             android:name=".TimerService"

@@ -15,8 +15,8 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:src="@drawable/ic_skull"
-        android:contentDescription="@string/mode_death_burpees"
-        app:tint="#FF5252"
+        android:contentDescription="@string/cd_skull"
+        app:tint="@color/burpee_accent"
         android:layout_marginTop="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -51,13 +51,13 @@
             android:layout_height="48dp"
             android:background="@drawable/minimal_input_background"
             android:gravity="center"
-            android:inputType="number"
             android:maxLength="3"
             android:textColor="@color/text_primary"
             android:textSize="24sp"
             android:textStyle="bold"
-            android:hint=""
-            android:importantForAutofill="no" />
+            android:hint="@string/hint_minutes"
+            android:importantForAutofill="no"
+            android:inputType="number" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -170,6 +170,7 @@
             app:iconPadding="0dp"
             app:iconSize="32dp"
             app:cornerRadius="36dp"
+            android:contentDescription="@string/cd_start_timer"
             app:backgroundTint="@color/primary" />
 
         <com.google.android.material.button.MaterialButton
@@ -185,6 +186,7 @@
             app:iconPadding="0dp"
             app:iconSize="32dp"
             app:cornerRadius="36dp"
+            android:contentDescription="@string/cd_stop_timer"
             app:strokeColor="@color/text_secondary" />
     </LinearLayout>
 

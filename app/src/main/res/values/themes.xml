@@ -2,14 +2,15 @@
 <resources>
     <style name="Theme.MinimalTimer" parent="Theme.Material3.Dark.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
-        <item name="colorPrimaryVariant">@color/primary_variant</item>
+        <item name="colorPrimaryContainer">@color/surface_elevated</item>
+        <item name="colorOnPrimaryContainer">@color/primary</item>
         <item name="colorSecondary">@color/secondary</item>
+        <item name="colorOnSecondary">@color/background_dark</item>
         <item name="android:colorBackground">@color/background_dark</item>
         <item name="colorSurface">@color/surface_dark</item>
-        <item name="colorOnPrimary">@color/background_dark</item>
-        <item name="colorOnSecondary">@color/background_dark</item>
-        <item name="colorOnBackground">@color/text_primary</item>
         <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnBackground">@color/text_primary</item>
+        <item name="colorOnPrimary">@color/text_on_primary</item>
         <item name="android:statusBarColor">@color/background_dark</item>
         <item name="android:navigationBarColor">@color/background_dark</item>
     </style>
@@ -17,15 +18,9 @@
     <!-- Timer Display Style -->
     <style name="TimerDisplayStyle">
         <item name="android:textSize">48sp</item>
-        <item name="android:textColor">@color/white</item>
+        <item name="android:textColor">@color/text_primary</item>
         <item name="android:fontFamily">sans-serif-light</item>
         <item name="android:letterSpacing">0.05</item>
-    </style>
-
-    <!-- Input Style -->
-    <style name="InputStyle" parent="Widget.Material3.TextInputLayout.OutlinedBox">
-        <item name="boxStrokeColor">@color/primary</item>
-        <item name="hintTextColor">@color/text_secondary</item>
     </style>
 
     <!-- Button Style -->

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import java.util.Locale
 
 enum class TimerState {
     IDLE,
@@ -23,8 +24,9 @@ enum class TimerMode {
 }
 
 /**
- * TimerViewModel: thin proxy that stores preferences and relays service state to the UI.
- * NO timer logic here — all countdown runs in TimerService.
+ * TimerViewModel: holds the editable configuration and persists every change.
+ * It contains no timer logic — the countdown lives in [TimerEngine] and is
+ * driven by [TimerService].
  */
 class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -43,62 +45,58 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private val _inputMinutes = MutableLiveData(preferencesManager.getLastDuration())
     val inputMinutes: LiveData<Int> = _inputMinutes
 
-    // Modo actual del temporizador
     private var _timerMode: TimerMode = TimerMode.ROUTINE
     val timerMode: TimerMode get() = _timerMode
-
-    // --- Service reference (set by Activity after binding) ---
-    private var _service: TimerService? = null
-
-    fun bindService(service: TimerService) {
-        _service = service
-    }
-
-    fun unbindService() {
-        _service = null
-    }
-
-    val service: TimerService? get() = _service
-
-    // --- Convenience accessors for service LiveData ---
-    // Activities should observe these directly from the service once bound.
 
     fun setTimerMode(mode: TimerMode) {
         _timerMode = mode
     }
 
+    /**
+     * Applies a saved preset, which also makes it the new default for that mode.
+     * Out-of-range values are rejected so the service never sees an invalid config.
+     */
+    fun applyPreset(preset: Preset) {
+        when (preset.mode) {
+            TimerMode.ROUTINE -> {
+                setWorkDuration(preset.workDurationSec)
+                setRestDuration(preset.restDurationSec)
+                setTotalSets(preset.totalSets)
+            }
+            TimerMode.DEATH_BURPEES -> setInputMinutes(preset.inputMinutes)
+        }
+    }
+
     fun setWorkDuration(seconds: Int) {
-        if (seconds in 5..3600) {
+        if (seconds in TimerEngine.MIN_WORK_SEC..TimerEngine.MAX_PHASE_SEC) {
             _workDuration.value = seconds
             preferencesManager.saveWorkDuration(seconds)
         }
     }
 
     fun setRestDuration(seconds: Int) {
-        if (seconds in 0..3600) {
+        if (seconds in 0..TimerEngine.MAX_PHASE_SEC) {
             _restDuration.value = seconds
             preferencesManager.saveRestDuration(seconds)
         }
     }
 
     fun setTotalSets(sets: Int) {
-        if (sets in 1..99) {
+        if (sets in TimerEngine.MIN_SETS..TimerEngine.MAX_SETS) {
             _totalSets.value = sets
             preferencesManager.saveTotalSets(sets)
         }
     }
 
     fun setInputMinutes(minutes: Int) {
-        if (minutes in 1..999) {
+        if (minutes in TimerEngine.MIN_MINUTES..TimerEngine.MAX_MINUTES) {
             _inputMinutes.value = minutes
             preferencesManager.saveLastDuration(minutes)
         }
     }
 
     fun formatTime(timeMs: Long): String {
-        val totalSeconds = (timeMs / 1000).toInt()
-        val minutes = totalSeconds / 60
-        val seconds = totalSeconds % 60
-        return String.format("%02d:%02d", minutes, seconds)
+        val totalSeconds = (timeMs / 1000).coerceAtLeast(0L)
+        return String.format(Locale.getDefault(), "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 }

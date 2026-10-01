@@ -1,42 +1,81 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Temporizador</string>
+    <string name="app_name">Death by Burpees Timer</string>
+
+    <!-- Selección de modo -->
     <string name="select_mode">Selecciona un modo</string>
     <string name="mode_routine">Modo Rutina</string>
     <string name="mode_routine_desc">Intervalos de trabajo y descanso personalizables</string>
     <string name="mode_death_burpees">Muerte por Burpees</string>
-    <string name="mode_death_burpees_desc">Beep cada minuto con aviso de 5 segundos</string>
-    <string name="duration_minutes">Duración</string>
-    <string name="minute_counter">Minuto %d</string>
-    <string name="burpees_label">Burpees</string>
-    <string name="hint_minutes">Minutos</string>
-    <string name="label_duration">duración</string>
-    <string name="label_mins">mins</string>
+    <string name="mode_death_burpees_desc">Beep cada minuto con aviso de 10 segundos</string>
+    <string name="presets_title">Rutinas rápidas</string>
+    <string name="preset_routine_summary">%1$d s trabajo · %2$d s descanso · %3$d series</string>
+    <string name="preset_burpees_summary">%1$d minutos</string>
+
+    <!-- Controles -->
     <string name="label_work">serie</string>
     <string name="label_rest">descanso</string>
     <string name="label_sets">series</string>
-    <string name="hint_work_duration_sec">Serie (seg)</string>
-    <string name="hint_work_duration_min">Serie (min)</string>
-    <string name="hint_rest_duration_sec">Descanso (seg)</string>
-    <string name="hint_rest_duration_min">Descanso (min)</string>
+    <string name="label_duration">duración</string>
+    <string name="label_mins">mins</string>
+    <string name="hint_minutes">Minutos</string>
+    <string name="hint_work_duration">Serie</string>
+    <string name="hint_rest_duration">Descanso</string>
     <string name="hint_total_sets">Series</string>
+    <string name="unit_seconds">Seg</string>
+    <string name="unit_minutes">Min</string>
+
+    <!-- Fases -->
     <string name="phase_prepare">PREPÁRATE</string>
     <string name="phase_work">ENTRENA!</string>
     <string name="phase_rest">DESCANSO</string>
-    <string name="notification_status_preparing">Preparando…</string>
-    <string name="set_counter" formatted="false">Serie %d/%d</string>
+    <string name="phase_name_and_set">%1$s · %2$s</string>
+    <string name="set_counter">Serie %1$d/%2$d</string>
+    <string name="set_counter_placeholder" formatted="false">Serie 1/8</string>
+    <string name="burpees_label">Burpees</string>
+    <string name="burpees_count">Burpees: %1$d</string>
+    <string name="burpees_placeholder">—</string>
+    <string name="burpees_to_do">Burpees en esta ronda: %1$d</string>
+    <string name="timer_remaining">Quedan %1$s</string>
+    <string name="timer_zero">00:00</string>
+    <string name="error_invalid_time">Ingresa un valor entre 1 y 999</string>
+
+    <!-- Botones -->
     <string name="btn_start">Iniciar</string>
     <string name="btn_stop">Detener</string>
     <string name="btn_reset">Reiniciar</string>
-    <string name="timer_format" formatted="false">%02d:%02d</string>
+    <string name="btn_pause">Pausar</string>
+    <string name="btn_resume">Reanudar</string>
+    <string name="cd_start_timer">Iniciar o pausar el temporizador</string>
+    <string name="cd_stop_timer">Detener el temporizador</string>
+    <string name="cd_reset_timer">Reiniciar el temporizador</string>
+    <string name="cd_skull">Muerte por Burpees</string>
+    <string name="cd_dumbbell">Modo Rutina</string>
+    <string name="cd_mode_card">Abrir %1$s</string>
+
+    <!-- Notificación -->
     <string name="notification_channel_name">Temporizador Activo</string>
     <string name="notification_channel_description">Muestra el progreso del temporizador</string>
-    <string name="notification_title">Temporizador en ejecución</string>
-    <string name="notification_text">Tiempo restante: %s</string>
     <string name="notification_status_running">En curso</string>
     <string name="notification_status_paused">Pausado</string>
-    <string name="timer_finished">¡Tiempo completado!</string>
-    <string name="unit_seconds">Seg</string>
-    <string name="unit_minutes">Min</string>
-    <string name="error_invalid_time">Ingresa un valor entre 1 y 999</string>
+
+    <!-- Ajustes -->
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_sound">Sonido</string>
+    <string name="settings_sound_desc">Tonos sintetizados en cada cambio de fase</string>
+    <string name="settings_vibration">Vibración</string>
+    <string name="settings_vibration_desc">Respuesta háptica en cada señal</string>
+    <string name="settings_audio_focus">Silenciar otras apps</string>
+    <string name="settings_audio_focus_desc">Reduce el volumen de Spotify y similares durante los tonos</string>
+
+    <!-- Historial -->
+    <string name="history_title">Historial</string>
+    <string name="history_empty">Aún no has completado ninguna sesión</string>
+    <string name="history_sessions">%1$d sesiones · %2$s en total</string>
+    <string name="history_streak">Racha: %1$d días</string>
+    <string name="history_entry_routine">Rutina · %1$d s</string>
+    <string name="history_entry_burpees">Burpees · %1$d min</string>
+    <string name="cd_history">Abrir historial</string>
+    <string name="cd_settings">Abrir ajustes</string>
+    <string name="delete_preset">Eliminar rutina</string>
 </resources>

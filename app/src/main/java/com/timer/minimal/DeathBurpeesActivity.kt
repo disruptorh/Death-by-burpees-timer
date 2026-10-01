@@ -1,10 +1,11 @@
 package com.timer.minimal
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.graphics.Color
+import android.content.pm.PackageManager
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.drawable.LayerDrawable
@@ -12,11 +13,16 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
+import android.view.View
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.button.MaterialButton
@@ -32,9 +38,9 @@ class DeathBurpeesActivity : AppCompatActivity() {
     private lateinit var btnStart: MaterialButton
     private lateinit var btnStop: MaterialButton
 
-    // Colores para gradiente
-    private val colorStart = Color.parseColor("#00BCD4") // Cyan/Azul
-    private val colorEnd = Color.parseColor("#FF5252")   // Rojo
+    private val colorStart by lazy { ContextCompat.getColor(this, R.color.burpee_gradient_start) }
+    private val colorEnd by lazy { ContextCompat.getColor(this, R.color.burpee_gradient_end) }
+    private val colorWarning by lazy { ContextCompat.getColor(this, R.color.timer_warning) }
 
     private var hasLoadedInitialValue = false
 
@@ -46,15 +52,19 @@ class DeathBurpeesActivity : AppCompatActivity() {
             val binder = service as TimerService.TimerBinder
             timerService = binder.getService()
             serviceBound = true
-            viewModel.bindService(binder.getService())
             observeServiceState()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             timerService = null
             serviceBound = false
-            viewModel.unbindService()
         }
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        // Permission result handled
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,22 +73,41 @@ class DeathBurpeesActivity : AppCompatActivity() {
 
         initViews()
         initViewModel()
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        requestNotificationPermission()
     }
 
     override fun onStart() {
         super.onStart()
-        // Bind to existing service if running
-        val intent = Intent(this, TimerService::class.java)
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        // Keep the screen on only while this Activity is visible, so the
+        // service can keep running in the background with the screen off.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        ensureServiceBound()
     }
 
     override fun onStop() {
         super.onStop()
-        if (serviceBound) {
-            unbindService(serviceConnection)
-            serviceBound = false
-            viewModel.unbindService()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        releaseServiceBinding()
+    }
+
+    private fun ensureServiceBound() {
+        if (serviceBound) return
+        bindService(Intent(this, TimerService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun releaseServiceBinding() {
+        if (!serviceBound) return
+        unbindService(serviceConnection)
+        serviceBound = false
+        timerService = null
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
@@ -93,7 +122,6 @@ class DeathBurpeesActivity : AppCompatActivity() {
         btnStart.setOnClickListener { onStartClicked() }
         btnStop.setOnClickListener { onStopClicked() }
 
-        // Guardar minutos cuando cambian - permitir vacío
         inputMinutes.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -101,7 +129,7 @@ class DeathBurpeesActivity : AppCompatActivity() {
                 val text = s?.toString() ?: ""
                 if (text.isNotEmpty()) {
                     val minutes = text.toIntOrNull()
-                    if (minutes != null && minutes in 1..999) {
+                    if (minutes != null && minutes in TimerEngine.MIN_MINUTES..TimerEngine.MAX_MINUTES) {
                         viewModel.setInputMinutes(minutes)
                     }
                 }
@@ -113,7 +141,11 @@ class DeathBurpeesActivity : AppCompatActivity() {
         viewModel = ViewModelProvider(this)[TimerViewModel::class.java]
         viewModel.setTimerMode(TimerMode.DEATH_BURPEES)
 
-        // Cargar último valor guardado solo si el input está vacío
+        // A preset chosen on the mode selector becomes the starting duration.
+        intent.getStringExtra(ModeSelectionActivity.EXTRA_PRESET_ID)?.let { presetId ->
+            PresetManager(this).findById(presetId)?.let(viewModel::applyPreset)
+        }
+
         viewModel.inputMinutes.observe(this) { minutes ->
             if (inputMinutes.text.isNullOrEmpty() && !hasLoadedInitialValue) {
                 inputMinutes.setText(minutes.toString())
@@ -122,63 +154,43 @@ class DeathBurpeesActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Observe timer state from the bound service.
-     */
     private fun observeServiceState() {
         val service = timerService ?: return
 
         service.timeRemainingMs.observe(this) { timeMs ->
-            // Skip calculation when timer is stopped — avoids showing wrong burpee count
-            val state = service.timerState.value
-            if (state == TimerState.IDLE) return@observe
+            // Skip when stopped so the burpee count is not shown for a finished run.
+            if (service.timerState.value == TimerState.IDLE) return@observe
 
             timerDisplay.text = viewModel.formatTime(timeMs)
+            timerDisplay.contentDescription = getString(R.string.timer_remaining, timerDisplay.text)
 
+            val totalMs = service.totalTimeMs.value ?: 0L
             val phase = service.currentPhase.value ?: TimerPhase.WORK
 
             if (phase == TimerPhase.PREPARE) {
-                // During prepare, just show the countdown, no burpee color logic
-                burpeeCounter.text = "—"
-                val prepareColor = android.graphics.Color.parseColor("#FFB300") // Amber
-                burpeeCounter.setTextColor(prepareColor)
-                applyColorToProgress(prepareColor)
-
-                val totalMs = service.totalTimeMs.value ?: 1L
-                if (totalMs > 0) {
-                    val progress = ((timeMs.toFloat() / totalMs) * 100).toInt()
-                    progressBar.progress = progress
-                }
+                burpeeCounter.setText(R.string.burpees_placeholder)
+                applyColorToProgress(colorWarning)
+                updateProgress(timeMs, totalMs)
                 return@observe
             }
 
-            val totalMs = service.totalTimeMs.value ?: 1L
-            val elapsedMs = totalMs - timeMs
-
-            // Calcular burpees a hacer = minuto actual + 1
-            val currentMinute = (elapsedMs / 60000).toInt()
-            val burpeesToDo = currentMinute + 1
+            val elapsedMs = (totalMs - timeMs).coerceAtLeast(0L)
+            val burpeesToDo = (elapsedMs / 60_000L).toInt() + 1
             burpeeCounter.text = burpeesToDo.toString()
+            burpeeCounter.contentDescription = getString(R.string.burpees_to_do, burpeesToDo)
 
-            // Calcular progreso TOTAL del ciclo para color (0.0 a 1.0)
             val totalProgress = if (totalMs > 0) elapsedMs.toFloat() / totalMs.toFloat() else 0f
-
-            // Aplicar color gradiente basado en progreso total
-            val color = ColorUtils.blendARGB(colorStart, colorEnd, totalProgress)
+            val color = ColorUtils.blendARGB(colorStart, colorEnd, totalProgress.coerceIn(0f, 1f))
             applyColorToProgress(color)
             burpeeCounter.setTextColor(color)
-
-            // Actualizar progreso circular
-            if (totalMs > 0) {
-                val progress = ((timeMs.toFloat() / totalMs) * 100).toInt()
-                progressBar.progress = progress
-            }
+            updateProgress(timeMs, totalMs)
         }
 
         service.timerState.observe(this) { state ->
             when (state) {
                 TimerState.IDLE -> {
                     btnStart.setIconResource(R.drawable.ic_play)
+                    btnStart.contentDescription = getString(R.string.cd_start_timer)
                     inputMinutes.isEnabled = true
                     applyColorToProgress(colorStart)
                     burpeeCounter.setTextColor(colorStart)
@@ -186,70 +198,65 @@ class DeathBurpeesActivity : AppCompatActivity() {
                 }
                 TimerState.RUNNING -> {
                     btnStart.setIconResource(R.drawable.ic_pause)
+                    btnStart.contentDescription = getString(R.string.btn_pause)
                     inputMinutes.isEnabled = false
                 }
                 TimerState.PAUSED -> {
                     btnStart.setIconResource(R.drawable.ic_play)
+                    btnStart.contentDescription = getString(R.string.btn_resume)
                     inputMinutes.isEnabled = false
                 }
-                null -> { /* no-op */ }
+                null -> Unit
             }
         }
     }
 
+    private fun updateProgress(timeMs: Long, totalMs: Long) {
+        if (totalMs <= 0) return
+        progressBar.progress = ((timeMs.toFloat() / totalMs.toFloat()) * 100).toInt()
+    }
+
     private fun applyColorToProgress(color: Int) {
-        try {
-            val drawable = progressBar.progressDrawable
-            if (drawable is LayerDrawable) {
-                drawable.getDrawable(1)?.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
-            } else {
-                drawable?.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val drawable = progressBar.progressDrawable ?: return
+        val filter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
+        if (drawable is LayerDrawable) {
+            drawable.getDrawable(1)?.colorFilter = filter
+        } else {
+            drawable.colorFilter = filter
         }
     }
 
     private fun onStartClicked() {
-        val currentState = timerService?.timerState?.value ?: TimerState.IDLE
-
-        when (currentState) {
+        when (timerService?.timerState?.value ?: TimerState.IDLE) {
             TimerState.IDLE -> {
-                // Start fresh timer via foreground service
-                val minutes = viewModel.inputMinutes.value ?: 10
                 val intent = Intent(this, TimerService::class.java).apply {
                     action = TimerService.ACTION_START
                     putExtra(TimerService.EXTRA_MODE, TimerMode.DEATH_BURPEES.name)
-                    putExtra(TimerService.EXTRA_INPUT_MINUTES, minutes)
+                    putExtra(
+                        TimerService.EXTRA_INPUT_MINUTES,
+                        viewModel.inputMinutes.value ?: TimerEngine.MIN_MINUTES
+                    )
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     startForegroundService(intent)
                 } else {
                     startService(intent)
                 }
-                // Bind to observe state
-                bindService(Intent(this, TimerService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
+                ensureServiceBound()
             }
-            TimerState.PAUSED -> {
-                val intent = Intent(this, TimerService::class.java).apply {
-                    action = TimerService.ACTION_RESUME
-                }
-                startService(intent)
-            }
-            TimerState.RUNNING -> {
-                val intent = Intent(this, TimerService::class.java).apply {
-                    action = TimerService.ACTION_PAUSE
-                }
-                startService(intent)
-            }
+            TimerState.PAUSED -> startService(
+                Intent(this, TimerService::class.java).setAction(TimerService.ACTION_RESUME)
+            )
+            TimerState.RUNNING -> startService(
+                Intent(this, TimerService::class.java).setAction(TimerService.ACTION_PAUSE)
+            )
         }
     }
 
     private fun onStopClicked() {
-        val intent = Intent(this, TimerService::class.java).apply {
-            action = TimerService.ACTION_STOP
-        }
-        startService(intent)
+        startService(
+            Intent(this, TimerService::class.java).setAction(TimerService.ACTION_STOP)
+        )
         burpeeCounter.text = "0"
         applyColorToProgress(colorStart)
         burpeeCounter.setTextColor(colorStart)
